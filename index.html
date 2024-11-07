@@ -1,131 +1,347 @@
 <!doctype html>
 <html>
+<style>
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #000;
+    width: 100%;
+    height: 100%;
+  }
+
+  .tw-video-w-full {
+    width: 100%;
+  }
+
+  .tw-video-h-full {
+    height: 100%;
+  }
+
+  .tw-video-overflow-hidden {
+    overflow: hidden;
+  }
+
+  .tw-video-flex {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100vw;
+    height: 100vh;
+    background-color: #000;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .play-button-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 1;
+    transition: opacity 0.3s;
+    z-index: 1;
+  }
+
+  .play-button {
+    background-color: rgba(255, 255, 255, 0.8);
+    border: none;
+    border-radius: 50%;
+    width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .play-button svg {
+    width: 32px;
+    height: 32px;
+    fill: #000;
+    /* Black color for the play icon */
+  }
+
+  /* Style for external quality menu */
+  .quality-menu {
+    margin-top: 10px;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 5px;
+    background: #f9f9f9;
+    width: 200px;
+  }
+
+  .quality-menu label {
+    font-weight: bold;
+  }
+
+  .quality-menu select {
+    width: 100%;
+    padding: 5px;
+    margin-top: 5px;
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@~1/dist/hls.min.js"></script>
+<!-- Import map for P2P Media Loader modules -->
+<script type="importmap">
+      {
+        "imports": {
+          "p2p-media-loader-core": "https://cdn.jsdelivr.net/npm/p2p-media-loader-core@2.0.1/dist/p2p-media-loader-core.es.js",
+          "p2p-media-loader-hlsjs": "https://cdn.jsdelivr.net/npm/p2p-media-loader-hlsjs@2.0.1/dist/p2p-media-loader-hlsjs.es.min.js"
+        }
+      }
+    </script>
+
+<!-- Vidstack player stylesheets -->
+<link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
+<link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
+
+<!-- Vidstack player library from CDN -->
+<script src="https://cdn.vidstack.io/player" type="module"></script>
+
+<script type="module">
+  import { HlsJsP2PEngine } from "p2p-media-loader-hlsjs";
+
+  const player = document.querySelector("media-player");
+  const playButton = document.getElementById("playPauseButton");
+  const HlsWithP2P = HlsJsP2PEngine.injectMixin(window.Hls);
+  const masterhls = 'https://enjoy24cdn.com/hlsr2/9a946cc64b16dc510d62fba5d7fe27c3/master.m3u8';
+
+  playButton.addEventListener("click", () => {
+    if (player.paused) {
+      player.play();
+      playButton.style.opacity = 0; // Hide button when playing
+    } else {
+      player.pause();
+      playButton.style.opacity = 1; // Show button when paused
+    }
+  });
+
+  player.addEventListener("play", () => {
+    playButton.style.opacity = 0;
+  });
+
+  player.addEventListener("pause", () => {
+    playButton.style.opacity = 1;
+  });
+
+  player.addEventListener("provider-change", (event) => {
+    const provider = event.detail;
+
+    if (provider?.type === "hls") {
+      provider.library = HlsWithP2P;
+      provider.config = {
+        p2p: {
+          core: {
+            swarmId: masterhls,
+            announceTrackers: [
+              "wss://p2p.streamhls.com",
+            ],
+          },
+          isP2PDisabled: false,
+          // Increase the number of cached segments to 1000
+          cachedSegmentsCount: 1000,
+          httpDownloadTimeWindow: 5000,
+          p2pDownloadTimeWindow: 10000,
+          simultaneousHttpDownloads: 5,
+          simultaneousP2PDownloads: 5,
+          webRtcMaxMessageSize: 64 * 1024,
+          p2pNotReceivingBytesTimeoutMs: 20000,
+          p2pInactiveLoaderDestroyTimeoutMs: 30000,
+          httpNotReceivingBytesTimeoutMs: 15000,
+          httpErrorRetries: 3,
+          p2pErrorRetries: 5,
+          rtcConfig: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:global.stun.twilio.com:3478?transport=udp" },
+            ],
+          },
+
+          onHlsJsCreated: (hls) => {
+
+            // ดักจับเหตุการณ์การดาวน์โหลดเซ็กเมนต์
+            hls.p2pEngine.addEventListener("onChunkDownloaded", (bytesLength, downloadSource, peerId) => {
+              const sizeInMiB = bytesLength / (1024 * 1024); // แปลงจาก byte เป็น MiB
+              if (downloadSource === "http") {
+                httpDownload += sizeInMiB;
+              } else if (downloadSource === "p2p") {
+                p2pDownload += sizeInMiB;
+              }
+              totalDownload = httpDownload + p2pDownload;
+              updateStatsOverlay();
+            });
+
+            // ดักจับเหตุการณ์การอัปโหลดเซ็กเมนต์
+            hls.p2pEngine.addEventListener("onChunkUploaded", (bytesLength, peerId) => {
+              p2pUpload += bytesLength / (1024 * 1024); // แปลงจาก byte เป็น MiB
+              updateStatsOverlay();
+            });
+
+            hls.p2pEngine.addEventListener("onPeerConnect", (params) => {
+              p2pConnections++;
+              updateStatsOverlay();
+            });
+
+            hls.p2pEngine.addEventListener("onPeerClose", (params) => {
+              p2pConnections = Math.max(0, p2pConnections - 1); // ลดจำนวนลงและไม่ให้ต่ำกว่า 0
+              updateStatsOverlay();
+            });
+
+            hls.p2pEngine.addEventListener("onPeerConnect", (params) => {
+              console.log("Peer connected:", params.peerId);
+            });
+          }
+        },
+      };
+    }
+  });
+
+</script>
+<script>
+  // ตัวแปรสำหรับเก็บจำนวนข้อมูลที่ดาวน์โหลดและอัปโหลด
+  let totalDownload = 0;
+  let httpDownload = 0;
+  let p2pDownload = 0;
+  let p2pUpload = 0;
+  let p2pConnections = 0; // จำนวนการเชื่อมต่อ P2P
+
+  // ฟังก์ชันเพื่ออัปเดตการแสดงข้อมูล
+  function updateStatsOverlay() {
+    const httpPercent = totalDownload ? ((httpDownload / totalDownload) * 100).toFixed(2) : 0;
+    const p2pPercent = totalDownload ? ((p2pDownload / totalDownload) * 100).toFixed(2) : 0;
+
+    document.getElementById("totalDownload").textContent = totalDownload.toFixed(2);
+    document.getElementById("httpDownload").textContent = httpDownload.toFixed(2);
+    document.getElementById("httpPercent").textContent = `${httpPercent}%`;
+    document.getElementById("p2pDownload").textContent = p2pDownload.toFixed(2);
+    document.getElementById("p2pPercent").textContent = `${p2pPercent}%`;
+    document.getElementById("p2pUpload").textContent = p2pUpload.toFixed(2);
+    document.getElementById("p2pConnections").textContent = p2pConnections; // เพิ่มการแสดงจำนวนการเชื่อมต่อ P2P
+  }
+
+</script>
+
+
+<body>
   <style>
-    /* Reset margins, padding, and overflow for full screen and black background */
-    html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: #000; /* Black background */
-      width: 100%;
-      height: 100%;
-    }
-
-    .tw-video-w-full {
-      width: 100%;
-    }
-
-    .tw-video-h-full {
-      height: 100%;
-    }
-
-    .tw-video-overflow-hidden {
-      overflow: hidden;
-    }
-
-    .tw-video-flex {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 100vw;
-      height: 100vh;
-      background-color: #000; /* Full-screen black background */
-      overflow: hidden;
-      position: relative;
-    }
-
-    .play-button-container {
+    /* Smaller and more compact style for the stats overlay */
+    .stats-overlay {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      opacity: 0;
-      transition: opacity 0.3s;
+      top: 10px;
+      right: 10px;
+      background-color: rgba(50, 50, 50, 0.85);
+      color: #fff;
+      padding: 6px;
+      border-radius: 5px;
+      font-size: 12px;
+      /* Reduced font size */
+      line-height: 1.3;
+      z-index: 10;
     }
 
-    media-player:hover .play-button-container {
-      opacity: 1;
+    .stats-overlay .stat-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 12px;
+      /* Reduced font size for items */
+    }
+
+    .stats-overlay .color-box {
+      width: 8px;
+      /* Reduced color box size */
+      height: 8px;
+      margin-right: 5px;
+    }
+
+    /* Adjusted colors for better visibility on compact design */
+    .color-download {
+      background-color: #ff6b6b;
+    }
+
+    .color-http {
+      background-color: #ffd93d;
+    }
+
+    .color-p2p {
+      background-color: #ffa600;
+    }
+
+    .color-upload {
+      background-color: #a4d8f0;
+    }
+
+    .color-connections {
+      background-color: #00ff22;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@~1/dist/hls.min.js"></script>
-  <script type="importmap">
-    {
-      "imports": {
-        "p2p-media-loader-core": "https://cdn.jsdelivr.net/npm/p2p-media-loader-core@%5E1/dist/p2p-media-loader-core.es.min.js",
-        "p2p-media-loader-hlsjs": "https://cdn.jsdelivr.net/npm/p2p-media-loader-core@%5E1/dist/p2p-media-loader-core.es.min.js"
-      }
-    }
-  </script>
-
-  <!-- Vidstack player stylesheets -->
-  <link rel="stylesheet" href="https://cdn.vidstack.io/player/theme.css" />
-  <link rel="stylesheet" href="https://cdn.vidstack.io/player/video.css" />
-
-  <!-- Vidstack player library from CDN -->
-  <script src="https://cdn.vidstack.io/player" type="module"></script>
-
-  <!-- Module script to initialize Vidstack player with P2P Media Loader -->
-  <script type="module">
-    import { HlsJsP2PEngine } from "p2p-media-loader-hlsjs";
-
-    const player = document.querySelector("media-player");
-    const HlsWithP2P = HlsJsP2PEngine.injectMixin(window.Hls);
-
-    player.addEventListener("provider-change", (event) => {
-      const provider = event.detail;
-
-      if (provider?.type === "hls") {
-        provider.library = HlsWithP2P;
-        provider.config = {
-          p2p: {
-            core: { swarmId: "Optional custom swarm ID for stream" },
-            segments: { forwardSegmentCount: 5000000 },
-            loader: {
-              cachedSegmentExpiration: 86400000,
-              cachedSegmentsCount: 1000,
-              requiredSegmentsPriority: 10,
-              httpDownloadMaxPriority: 9,
-              httpDownloadProbability: 0.06,
-              httpDownloadProbabilityInterval: 1000,
-              httpDownloadProbabilitySkipIfNoPeers: true,
-              p2pDownloadMaxPriority: 50,
-              httpFailedSegmentTimeout: 1000,
-              simultaneousP2PDownloads: 20,
-              simultaneousHttpDownloads: 3,
-              requestTimeOut: 5000,
-              trackerAnnounce: [
-                "wss://tracker.streameiei.xyz",
-                "wss://tracker.novage.com.ua",
-                "wss://tracker.webtorrent.dev",
-                "wss://tracker.openwebtorrent.com"
-              ],
-              rtcConfig: {
-                iceServers: [
-                  { urls: "stun:stun.l.google.com:19302" },
-                  { urls: "stun:global.stun.twilio.com:3478" }
-                ],
-              },
-            },
-            onHlsJsCreated: (hls) => {
-              hls.p2pEngine.addEventListener("onPeerConnect", (params) => {
-                console.log("Peer connected:", params.peerId);
-              });
-            },
-          },
-        };
-      }
-    });
-  </script>
-</head>
-<body>
+  <div class="stats-overlay" id="statsOverlay">
+    <div class="stat-item">
+      <div class="color-box color-download"></div> Download : <span id="totalDownload"> 0.00</span> MiB
+    </div>
+    <div class="stat-item">
+      <div class="color-box color-http"></div> HTTP : <span id="httpDownload"> 0.00</span> MiB - <span
+        id="httpPercent">0%</span>
+    </div>
+    <div class="stat-item">
+      <div class="color-box color-p2p"></div> P2P : <span id="p2pDownload"> 0.00</span> MiB - <span
+        id="p2pPercent">0%</span>
+    </div>
+    <div class="stat-item">
+      <div class="color-box color-upload"></div> Upload P2P : <span id="p2pUpload"> 0.00</span> MiB
+    </div>
+    <div class="stat-item">
+      <div class="color-box color-connections"></div> P2P Connections : <span id="p2pConnections"> 0</span>
+    </div>
+  </div>
   <div class="tw-video-flex">
-    <media-player
-      class="tw-video-w-full tw-video-h-full tw-video-overflow-hidden"
-      src="https://movie.anime-av.com/hls-v2/c6557dd5fcea7d0d1db6bb259036f573/master.m3u8"
-    >
+    <!-- Centered play/pause button with SVG icon -->
+    <div class="play-button-container">
+      <button id="playPauseButton" class="play-button">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true"
+          xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M10.6667 6.6548C10.6667 6.10764 11.2894 5.79346 11.7295 6.11862L24.377 15.4634C24.7377 15.7298 24.7377 16.2692 24.3771 16.5357L11.7295 25.8813C11.2895 26.2065 10.6667 25.8923 10.6667 25.3451L10.6667 6.6548Z"
+            fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+
+    <media-player class="tw-video-w-full tw-video-h-full tw-video-overflow-hidden"
+      src="https://enjoy24cdn.com/hlsr2/9a946cc64b16dc510d62fba5d7fe27c3/master.m3u8">
       <media-provider></media-provider>
       <media-video-layout></media-video-layout>
     </media-player>
   </div>
 </body>
+<template>
+  <div class="tw-video-flex tw-video-w-full tw-video-h-full tw-video-overflow-hidden">
+    <media-player load="visible" posterLoad="visible"
+      class="tw-video-w-full tw-video-h-full tw-video-bg-slate-900 tw-video-text-white tw-video-font-sans tw-video-overflow-hidden tw-video-rounded-md tw-video-ring-media-focus data-[focus]:tw-video-ring-4"
+      :title="videoTitle" :src="videoUrlDefault" crossorigin playsinline @provider-change="onProviderChange"
+      @can-play="onCanPlay" @play="onPlay" ref="$player">
+      <media-provider>
+        <media-poster
+          class="tw-video-absolute tw-video-inset-0 tw-video-block tw-video-h-full tw-video-w-full tw-video-rounded-md tw-video-opacity-0 tw-video-transition-opacity data-[visible]:tw-video-opacity-100 [&>img]:tw-video-h-full [&>img]:tw-video-w-full [&>img]:tw-video-object-cover"
+          :src="//s3.okenjoy-1.com/files/9a946cc64b16dc510d62fba5d7fe27c3/thumbnail.jpg" />
+      </media-provider>
+      <div class="play-button-container">
+        <media-play-button class="vds-button">
+          <media-icon type="play" class="play-icon vds-icon"></media-icon>
+          <media-icon type="pause" class="pause-icon vds-icon"></media-icon>
+        </media-play-button>
+      </div>
+      <VideoLayout :thumbnails="//s3.okenjoy-1.com/files/9a946cc64b16dc510d62fba5d7fe27c3/thumbnail.jpg" />
+    </media-player>
+  </div>
+</template>
+<script defer src="https://analytics.enjoy24cdn.com/script.js"
+  data-website-id="0af08924-7bda-42c6-85d9-ea4d4288ec33"></script>
+</body>
+
 </html>
