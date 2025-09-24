@@ -109,7 +109,7 @@
   const player = document.querySelector("media-player");
   const playButton = document.getElementById("playPauseButton");
   const HlsWithP2P = HlsJsP2PEngine.injectMixin(window.Hls);
-  const masterhls = 'https://enjoy24cdn.com/hlsr2/9a946cc64b16dc510d62fba5d7fe27c3/master.m3u8';
+  const masterhls = 'https://files.vidstack.io/sprite-fight/hls/stream.m3u8';
 
   playButton.addEventListener("click", () => {
     if (player.paused) {
@@ -345,3 +345,4 @@
 </body>
 
 </html>
+
